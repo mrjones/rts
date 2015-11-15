@@ -1,4 +1,4 @@
-mod block_storage;
+pub mod block_storage;
 
 #[test]
 fn it_works() {
