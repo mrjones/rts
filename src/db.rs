@@ -29,7 +29,7 @@ fn store(n: u64, buf: &mut [u8]) {
 
 // Stupid data layout
 // First 8 bytes: count of records
-// Each record is 16 bytes
+// Each record is 16 bytes: 8 bytes of timestamp, 8 bytes of value
 
 impl Db {
     pub fn new(storage: Box<Device>) -> Db {
@@ -69,13 +69,15 @@ impl Db {
             }
         }
 
-        return Err(io::Error::new(io::ErrorKind::Other, "mismatched ts"));
+        return Err(io::Error::new(io::ErrorKind::NotFound, "No Matching TS"));
     }
 }
 
 #[cfg(test)]
 mod test {
     use block_storage::InMemoryDevice;
+    use std::io::ErrorKind;
+    
     use super::Db;
     use super::load;
     use super::store;
@@ -105,5 +107,7 @@ mod test {
         db.record(1111111111, 1).unwrap();
         assert_eq!(257, db.lookup(1234567890).unwrap());
         assert_eq!(1,   db.lookup(1111111111).unwrap());
+        assert_eq!(ErrorKind::NotFound,
+                   db.lookup(2222222222).unwrap_err().kind());
     }
 }
