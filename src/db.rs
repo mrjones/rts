@@ -1,3 +1,5 @@
+extern crate time;
+
 use std::io;
 
 use block_storage::Device;
@@ -25,6 +27,44 @@ fn store(n: u64, buf: &mut [u8]) {
     for b in 0..VAL_WIDTH {
         buf[b] = ((n >> (8 * b)) % 256) as u8;
     }
+}
+
+fn store_timespec(t: time::Timespec, buf: &mut [u8]) {
+    assert_eq!(VAL_WIDTH, buf.len());
+
+    store(t.nsec as u64 + ((t.sec as u64) << 32), buf);
+}
+
+fn load_timespec(buf: &[u8]) -> time::Timespec {
+    assert_eq!(VAL_WIDTH, buf.len());
+
+    let modulus = 1 << 32;
+    let packed = load(buf);
+    let nsec = (packed % modulus) as i32;
+    let sec = (packed >> 32) as i64;
+
+    return time::Timespec::new(sec, nsec);
+}
+
+struct Rec {
+    timestamp: time::Timespec,
+    value: u64,
+}
+
+fn store_rec(rec: Rec, buf: &mut [u8]) {
+    assert_eq!(2 * VAL_WIDTH, buf.len());
+
+    store_timespec(rec.timestamp, &mut buf[0..VAL_WIDTH]);
+    store(rec.value, &mut buf[VAL_WIDTH..(2*VAL_WIDTH)]);
+}
+
+fn load_rec(buf: &[u8]) -> Rec {
+    assert_eq!(2 * VAL_WIDTH, buf.len());
+    
+    let value = load(&buf[VAL_WIDTH..(2*VAL_WIDTH)]);
+    let timestamp = load_timespec(&buf[0..VAL_WIDTH]);
+
+    return Rec{timestamp: timestamp, value: value};
 }
 
 fn record_offset(rec_index: u64) -> u64 {
