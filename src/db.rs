@@ -27,6 +27,10 @@ fn store(n: u64, buf: &mut [u8]) {
     }
 }
 
+fn record_offset(rec_index: u64) -> u64 {
+    return VAL_WIDTH as u64 + rec_index * REC_WIDTH as u64;
+}
+
 // Stupid data layout
 // First 8 bytes: count of records
 // Each record is 16 bytes: 8 bytes of timestamp, 8 bytes of value
@@ -37,30 +41,24 @@ impl Db {
     }
 
     pub fn record(&mut self, ts: u64, val: u64) -> io::Result<()> {
-        let mut rec_count_buf : [u8; VAL_WIDTH] = [0; VAL_WIDTH];
-        try!(self.storage.read(0, VAL_WIDTH as u64, &mut rec_count_buf));
-        let rec_count = load(&rec_count_buf);
+        let rec_count = try!(self.num_records());
 
-        let offset = VAL_WIDTH as u64 + rec_count * REC_WIDTH as u64;
+        let offset = record_offset(rec_count);
         let mut rec : [u8; REC_WIDTH] = [0; REC_WIDTH];
         store(ts, &mut rec[0..VAL_WIDTH]);
         store(val, &mut rec[VAL_WIDTH..(2*VAL_WIDTH)]);
         try!(self.storage.write(offset, &rec));
-
-        store(rec_count + 1, &mut rec_count_buf);
-        try!(self.storage.write(0, &rec_count_buf));
+        try!(self.set_record_count(rec_count + 1));
         
         return Ok(());
     }
 
     pub fn lookup(&mut self, ts: u64) -> io::Result<u64> {
-        let mut rec_count_buf : [u8; VAL_WIDTH] = [0; VAL_WIDTH];
-        try!(self.storage.read(0, VAL_WIDTH as u64, &mut rec_count_buf));
-        let rec_count = load(&rec_count_buf);
+        let rec_count = try!(self.num_records());
 
         let mut rec : [u8; REC_WIDTH] = [0; REC_WIDTH];
         for i in 0..rec_count {
-            let offset = VAL_WIDTH as u64 + i * REC_WIDTH as u64;
+            let offset = record_offset(i);
             try!(self.storage.read(offset, (REC_WIDTH) as u64, &mut rec));
             let disk_ts = load(&rec[0..VAL_WIDTH]);
             if disk_ts == ts {
@@ -70,6 +68,19 @@ impl Db {
         }
 
         return Err(io::Error::new(io::ErrorKind::NotFound, "No Matching TS"));
+    }
+
+    fn num_records(&mut self) -> io::Result<u64> {
+        let mut rec_count_buf : [u8; VAL_WIDTH] = [0; VAL_WIDTH];
+        try!(self.storage.read(0, VAL_WIDTH as u64, &mut rec_count_buf));
+        return Ok(load(&rec_count_buf));
+    }
+
+    fn set_record_count(&mut self, rec_count: u64) -> io::Result<()> {
+        let mut rec_count_buf : [u8; VAL_WIDTH] = [0; VAL_WIDTH];
+        store(rec_count + 1, &mut rec_count_buf);
+        try!(self.storage.write(0, &rec_count_buf));
+        return Ok(())
     }
 }
 
