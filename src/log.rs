@@ -54,7 +54,7 @@ pub struct FileLogReader {
 
 impl FileLogReader {
     pub fn create<P: AsRef<path::Path>>(path: P, record_size_bytes: usize) -> io::Result<FileLogReader> {
-        let f = try!(fs::File::create(path));
+        let f = try!(fs::File::open(path));
         return Ok(FileLogReader{
             file: f,
             record_size_bytes: record_size_bytes,
@@ -79,10 +79,17 @@ impl LogReader for FileLogReader {
             return Ok(true);
         }
 
-        if self.buf_ptr >= self.buf_size {
+        if self.buf_ptr >= (self.buf_size - self.block_padding()) {
             try!(self.read_next_block());
         }
 
+        for i in 0..self.record_size_bytes {
+            result[i] = self.buf[self.buf_ptr + i];
+        }
+
+        self.buf_ptr += self.record_size_bytes;
+
+        // TODO(mrjons): Check done
         return Ok(false);
     }
 }
@@ -91,14 +98,19 @@ impl FileLogReader {
     fn read_next_block(&mut self) -> io::Result<()> {
         self.buf_ptr = 0;
         self.buf_size = try!(self.file.read(&mut self.buf));
-
         return Ok(());
+    }
+
+    fn block_padding(&self) -> usize {
+        return BLOCK_SIZE_BYTES % self.record_size_bytes;
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::FileLogReader;
     use super::FileLogWriter;
+    use super::LogReader;
     use super::LogWriter;
     
     use std::io::ErrorKind;
@@ -113,7 +125,13 @@ mod test {
     
     #[test]
     fn basic_log_replay() {
-        let mut log = FileLogWriter::create("/tmp/filelog", 4).unwrap();
-        log.append(&[0,1,2,3]).unwrap();
+        {
+            let mut writer = FileLogWriter::create("/tmp/filelog", 4).unwrap();
+            writer.append(&[0,1,2,3]).unwrap();
+        }
+
+        let mut reader = FileLogReader::create("/tmp/filelog", 4).unwrap();
+        let mut buf = [0; 4];
+        reader.next_record(&mut buf).unwrap();
     }
 }
