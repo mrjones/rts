@@ -48,8 +48,7 @@ pub struct FileLogReader {
     buf: [u8; BLOCK_SIZE_BYTES],
     buf_ptr: usize,
     buf_size: usize,
-
-    done: bool,
+    read_last_block: bool,
 }
 
 impl FileLogReader {
@@ -61,7 +60,7 @@ impl FileLogReader {
             buf: [0; BLOCK_SIZE_BYTES],
             buf_ptr: 0,
             buf_size: 0,
-            done: false,
+            read_last_block: false,
         })
     }
 }
@@ -75,11 +74,11 @@ impl LogReader for FileLogReader {
                         self.record_size_bytes, result.len())));
         }
         
-        if self.done {
-            return Ok(true);
-        }
+        if self.current_block_expired() {
+            if self.read_last_block {
+                return Ok(true);
+            }
 
-        if self.buf_ptr >= (self.buf_size - self.block_padding()) {
             try!(self.read_next_block());
         }
 
@@ -88,8 +87,6 @@ impl LogReader for FileLogReader {
         }
 
         self.buf_ptr += self.record_size_bytes;
-
-        // TODO(mrjons): Check done
         return Ok(false);
     }
 }
@@ -98,7 +95,15 @@ impl FileLogReader {
     fn read_next_block(&mut self) -> io::Result<()> {
         self.buf_ptr = 0;
         self.buf_size = try!(self.file.read(&mut self.buf));
+
+        if self.buf_size < BLOCK_SIZE_BYTES {
+            self.read_last_block = true;
+        }
         return Ok(());
+    }
+
+    fn current_block_expired(&self) -> bool {
+        return self.buf_ptr >= (self.buf_size - self.block_padding())
     }
 
     fn block_padding(&self) -> usize {
@@ -124,7 +129,7 @@ mod test {
     }
     
     #[test]
-    fn basic_log_replay() {
+    fn single_log_replay() {
         {
             let mut writer = FileLogWriter::create("/tmp/filelog", 4).unwrap();
             writer.append(&[0,1,2,3]).unwrap();
@@ -132,6 +137,9 @@ mod test {
 
         let mut reader = FileLogReader::create("/tmp/filelog", 4).unwrap();
         let mut buf = [0; 4];
-        reader.next_record(&mut buf).unwrap();
+        assert_eq!(false, reader.next_record(&mut buf).unwrap());
+        assert_eq!([0,1,2,3], buf);
+        // TODO(mrjones): i'm not sure these are the semantics I want
+        assert_eq!(true, reader.next_record(&mut buf).unwrap());
     }
 }
