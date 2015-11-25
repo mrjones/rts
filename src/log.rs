@@ -17,6 +17,7 @@ pub trait LogReader {
 pub struct FileLogWriter {
     file: fs::File,
     record_size_bytes: usize,
+    block_ptr: usize,
 }
 
 impl FileLogWriter {
@@ -25,12 +26,20 @@ impl FileLogWriter {
         return Ok(FileLogWriter{
             file: f,
             record_size_bytes: record_size_bytes,
+            block_ptr: 0,
         })
     }
 }
 
 impl LogWriter for FileLogWriter {
     fn append(&mut self, buf: &[u8]) -> io::Result<()> {
+        let bytes_remaining = BLOCK_SIZE_BYTES - self.block_ptr;
+        if bytes_remaining < self.record_size_bytes {
+            let zeroes = vec![0; bytes_remaining];
+            try!(self.file.write_all(&zeroes[..]));
+            self.block_ptr = 0;
+        }
+        
         if buf.len() != self.record_size_bytes {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -141,5 +150,26 @@ mod test {
         assert_eq!([0,1,2,3], buf);
         // TODO(mrjones): i'm not sure these are the semantics I want
         assert_eq!(true, reader.next_record(&mut buf).unwrap());
+    }
+
+    #[test]
+    fn multiple_block_replay() {
+        let records = 2 * ((super::BLOCK_SIZE_BYTES + 4) / 4);
+        
+        {
+            let mut writer = FileLogWriter::create("/tmp/filelog.multi", 4).unwrap();
+            for i in 0..records {
+                let v = (i % 256) as u8;
+                writer.append(&[v, v, v, v]).unwrap();
+            }
+        }
+
+        let mut reader = FileLogReader::create("/tmp/filelog.multi", 4).unwrap();
+        let mut buf = [0; 4];
+        for i in 0..records {
+            let v = (i % 256) as u8;
+            assert_eq!(false, reader.next_record(&mut buf).unwrap());
+            assert_eq!([v, v, v, v], buf);
+        }
     }
 }
