@@ -85,7 +85,7 @@ impl LogReader for FileLogReader {
         
         if self.current_block_expired() {
             if self.read_last_block {
-                return Ok(true);
+                return Ok(false);
             }
 
             try!(self.read_next_block());
@@ -96,7 +96,7 @@ impl LogReader for FileLogReader {
         }
 
         self.buf_ptr += self.record_size_bytes;
-        return Ok(false);
+        return Ok(true);
     }
 }
 
@@ -126,7 +126,8 @@ mod test {
     use super::FileLogWriter;
     use super::LogReader;
     use super::LogWriter;
-    
+
+    use std::fs;
     use std::io::ErrorKind;
 
     #[test]
@@ -146,10 +147,12 @@ mod test {
 
         let mut reader = FileLogReader::create("/tmp/filelog", 4).unwrap();
         let mut buf = [0; 4];
-        assert_eq!(false, reader.next_record(&mut buf).unwrap());
+        assert_eq!(true, reader.next_record(&mut buf).unwrap());
         assert_eq!([0,1,2,3], buf);
         // TODO(mrjones): i'm not sure these are the semantics I want
-        assert_eq!(true, reader.next_record(&mut buf).unwrap());
+        assert_eq!(false, reader.next_record(&mut buf).unwrap());
+
+        fs::remove_file("/tmp/filelog").unwrap();
     }
 
     #[test]
@@ -168,8 +171,10 @@ mod test {
         let mut buf = [0; 4];
         for i in 0..records {
             let v = (i % 256) as u8;
-            assert_eq!(false, reader.next_record(&mut buf).unwrap());
+            assert_eq!(true, reader.next_record(&mut buf).unwrap());
             assert_eq!([v, v, v, v], buf);
         }
+        assert_eq!(false, reader.next_record(&mut buf).unwrap());
+        fs::remove_file("/tmp/filelog.multi").unwrap();
     }
 }
