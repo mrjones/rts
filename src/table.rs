@@ -142,22 +142,23 @@ mod test {
     #[test]
     fn write_table() {
         let mut map = BTreeMap::new();
-        map.insert(1, 2);
-        map.insert(3, 4);
-        map.insert(100, 101);
-
+        for i in 0..1000 {
+            map.insert(i, i+1);
+        }
+        
         {
             super::TableBuilder::write("/tmp/table", map.iter())
                 .expect("TableWriter::write");
         }
 
-        let mut i = super::TableIterator::new("/tmp/table")
+        let mut iter = super::TableIterator::new("/tmp/table")
             .expect("TableIterator::new");
-        assert_eq!((1, 2), i.next().expect("Val 0"));
-        assert_eq!((3, 4), i.next().expect("Val 1"));
-        assert_eq!((100, 101), i.next().expect("Val 2"));
-        assert_eq!(None, i.next());
-        assert_eq!(None, i.next());
+        for i in 0..1000 {
+            assert_eq!((i,i+1), iter.next().expect(&format!("Val {}", i)));
+        }
+
+        assert_eq!(None, iter.next());
+        assert_eq!(None, iter.next());
     }
 
     #[test]
