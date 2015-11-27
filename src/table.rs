@@ -18,8 +18,18 @@ impl TableBuilder {
         let mut rec_count = 0;
         let mut block = [0; BLOCK_SIZE];
         let mut block_ptr = 0;
+
+        let mut prev_k = 0;
         
         for (k, v) in data {
+            if rec_count > 0 && *k < prev_k {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Keys must be ordered. {} is not greater than {}",
+                            *k, prev_k)));
+            }
+            prev_k = *k;
+            
             assert!(block_ptr + REC_SIZE <= (BLOCK_SIZE - FOOTER_SIZE));
             format::store(*k, &mut block[block_ptr..(block_ptr + 8)]);
             format::store(*v, &mut block[(block_ptr + 8)..(block_ptr+16)]);
@@ -77,6 +87,7 @@ impl TableIterator {
     }
 
     fn read_block(&mut self) -> io::Result<()> {
+        println!("Read block");
         let read_size = try!(self.file.read(&mut self.block));
         if read_size == 0 {
             self.done = true;
@@ -125,6 +136,8 @@ impl Iterator for TableIterator {
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
+    use std::collections::HashMap;
+    use std::io;
 
     #[test]
     fn write_table() {
@@ -134,14 +147,29 @@ mod test {
         map.insert(100, 101);
 
         {
-            super::TableBuilder::write("/tmp/table", map.iter()).unwrap();
+            super::TableBuilder::write("/tmp/table", map.iter())
+                .expect("TableWriter::write");
         }
 
-        let mut i = super::TableIterator::new("/tmp/table").unwrap();
-        assert_eq!((1, 2), i.next().unwrap());
-        assert_eq!((3, 4), i.next().unwrap());
-        assert_eq!((100, 101), i.next().unwrap());
+        let mut i = super::TableIterator::new("/tmp/table")
+            .expect("TableIterator::new");
+        assert_eq!((1, 2), i.next().expect("Val 0"));
+        assert_eq!((3, 4), i.next().expect("Val 1"));
+        assert_eq!((100, 101), i.next().expect("Val 2"));
         assert_eq!(None, i.next());
         assert_eq!(None, i.next());
+    }
+
+    #[test]
+    fn unordered_records() {
+        let mut map = HashMap::new();
+        for i in 0..1000 {
+            map.insert(i, i);
+        }
+
+        let res = super::TableBuilder::write("/tmp/table-unordered", map.iter());
+
+        assert!(res.is_err());
+        assert_eq!(io::ErrorKind::InvalidInput, res.unwrap_err().kind());
     }
 }
