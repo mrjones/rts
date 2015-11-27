@@ -1,3 +1,5 @@
+use format;
+
 use log::FileLogReader;
 use log::FileLogWriter;
 use log::LogReader;
@@ -11,31 +13,11 @@ pub struct MemTable {
     data: Box<BTreeMap<u64, u64>>
 }
 
-const VAL_WIDTH: usize = 8;
-
-fn load(buf: &[u8]) -> u64 {
-    assert_eq!(VAL_WIDTH, buf.len());
-
-    let mut acc : u64 = 0;
-    for b in 0..VAL_WIDTH {
-        acc += (buf[b] as u64) << (8 * b);
-    }
-    return acc;
-}
-
-fn store(n: u64, buf: &mut [u8]) {
-    assert_eq!(VAL_WIDTH, buf.len());
-
-    for b in 0..VAL_WIDTH {
-        buf[b] = ((n >> (8 * b)) % 256) as u8;
-    }
-}
-
 impl MemTable {
     pub fn record(&mut self, k: u64, v: u64) -> io::Result<()> {
         let mut buf : [u8; 16] = [0; 16];
-        store(k, &mut buf[0..8]);
-        store(v, &mut buf[8..16]);
+        format::store(k, &mut buf[0..8]);
+        format::store(v, &mut buf[8..16]);
         try!(self.logger.append(&buf));
         self.data.insert(k, v);
         return Ok(());
@@ -53,8 +35,8 @@ impl MemTable {
                 let mut reader = r.unwrap();
                 let mut buf : [u8; 16] = [0; 16];
                 while try!(reader.next_record(&mut buf)) {
-                    let k : u64 = load(&buf[0..8]);
-                    let v : u64 = load(&buf[8..16]);
+                    let k : u64 = format::load(&buf[0..8]);
+                    let v : u64 = format::load(&buf[8..16]);
                     data.insert(k, v);
                 }
             }
