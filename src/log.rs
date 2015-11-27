@@ -132,20 +132,25 @@ mod test {
 
     #[test]
     fn invalid_record_size() {
-        let mut log = FileLogWriter::create("/tmp/filelog", 4).unwrap();
+        let mut log = FileLogWriter::create("/tmp/filelog-bad", 4).unwrap();
         assert_eq!(ErrorKind::InvalidInput,
                    log.append(&[0]).unwrap_err().kind());
         
+        fs::remove_file("/tmp/filelog-bad")
+            .expect("Should have cleaned up the file");
     }
     
     #[test]
     fn single_log_replay() {
         {
-            let mut writer = FileLogWriter::create("/tmp/filelog", 4).unwrap();
-            writer.append(&[0,1,2,3]).unwrap();
+            let mut writer = FileLogWriter::create("/tmp/filelog", 4)
+                .expect("Should have created a new writer");
+            writer.append(&[0,1,2,3])
+                .expect("Should have written 0,1,2,3");
         }
 
-        let mut reader = FileLogReader::create("/tmp/filelog", 4).unwrap();
+        let mut reader = FileLogReader::create("/tmp/filelog", 4)
+            .expect("Should have opened the existing filelog");
         let mut buf = [0; 4];
         assert_eq!(true, reader.next_record(&mut buf).unwrap());
         assert_eq!([0,1,2,3], buf);
@@ -175,6 +180,7 @@ mod test {
             assert_eq!([v, v, v, v], buf);
         }
         assert_eq!(false, reader.next_record(&mut buf).unwrap());
+
         fs::remove_file("/tmp/filelog.multi").unwrap();
     }
 }

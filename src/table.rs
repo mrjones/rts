@@ -1,6 +1,7 @@
 use format;
 use std::fs;
 use std::io;
+use std::io::Read;
 use std::io::Write;
 use std::path;
 
@@ -50,6 +51,77 @@ impl TableBuilder {
     }
 }
 
+pub struct TableIterator {
+    block: [u8; BLOCK_SIZE],
+    status: io::Result<()>,
+    block_ptr: usize,
+    file: fs::File,
+    records_in_block: usize,
+    records_read_from_block: usize,
+    done: bool,
+}
+
+impl TableIterator {
+    pub fn new<P: AsRef<path::Path>>(filename: P) -> io::Result<TableIterator> {
+        let f = try!(fs::File::open(filename));
+
+        return Ok(TableIterator{
+            block: [0; BLOCK_SIZE],
+            status: Ok(()),
+            block_ptr: BLOCK_SIZE,
+            file: f,
+            records_in_block: 0,
+            records_read_from_block: 0,
+            done: false,
+        });
+    }
+
+    fn read_block(&mut self) -> io::Result<()> {
+        let read_size = try!(self.file.read(&mut self.block));
+        if read_size == 0 {
+            self.done = true;
+            return Ok(());
+        }
+        assert_eq!(read_size, BLOCK_SIZE);
+
+        let footer_ptr = BLOCK_SIZE - FOOTER_SIZE;
+        self.records_in_block = format::load(&self.block[footer_ptr..(footer_ptr+8)]) as usize;
+
+        self.block_ptr = 0;
+        return Ok(());
+    }
+}
+
+impl Iterator for TableIterator {
+    type Item = (u64, u64);
+
+    fn next(&mut self) -> Option<(u64, u64)> {
+        if self.done {
+            return None;
+        }
+
+        if self.records_read_from_block >= self.records_in_block {           
+            self.status = self.read_block();
+            if !self.status.is_ok() {
+                self.done = true;
+                return None;
+            }
+
+            if self.done {
+                return None;
+            }
+
+        }
+
+        let k = format::load(&self.block[self.block_ptr..(self.block_ptr+8)]);
+        let v = format::load(&self.block[(self.block_ptr+8)..(self.block_ptr+16)]);
+        self.block_ptr += REC_SIZE;
+        self.records_read_from_block += 1;
+
+        return Some((k,v));
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
@@ -59,7 +131,17 @@ mod test {
         let mut map = BTreeMap::new();
         map.insert(1, 2);
         map.insert(3, 4);
+        map.insert(100, 101);
 
-        super::TableBuilder::write("/tmp/table", map.iter()).unwrap();
+        {
+            super::TableBuilder::write("/tmp/table", map.iter()).unwrap();
+        }
+
+        let mut i = super::TableIterator::new("/tmp/table").unwrap();
+        assert_eq!((1, 2), i.next().unwrap());
+        assert_eq!((3, 4), i.next().unwrap());
+        assert_eq!((100, 101), i.next().unwrap());
+        assert_eq!(None, i.next());
+        assert_eq!(None, i.next());
     }
 }
