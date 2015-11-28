@@ -26,26 +26,27 @@ impl MemTable {
     pub fn lookup(&self, k: u64) -> Option<&u64> {
         return self.data.get(&k);
     }
+
+    pub fn create<P: AsRef<path::Path>>(filename: P) -> io::Result<MemTable> {
+        return Ok(MemTable{
+            logger: Box::new(try!(FileLogWriter::create(filename, 16))),
+            data: Box::new(BTreeMap::new()),
+        })
+    }
     
-    pub fn replay<P: AsRef<path::Path>>(filename: P) -> io::Result<MemTable> {
+    pub fn replay<P: AsRef<path::Path>>(filename: P) -> io::Result<BTreeMap<u64, u64>> {
         let mut data : BTreeMap<u64, u64> = BTreeMap::new();
         {
-            let r = FileLogReader::create(&filename, 16);
-            if r.is_ok() {
-                let mut reader = r.unwrap();
-                let mut buf : [u8; 16] = [0; 16];
-                while try!(reader.next_record(&mut buf)) {
-                    let k : u64 = format::load(&buf[0..8]);
-                    let v : u64 = format::load(&buf[8..16]);
-                    data.insert(k, v);
-                }
+            let mut reader = try!(FileLogReader::create(&filename, 16));
+            let mut buf : [u8; 16] = [0; 16];
+            while try!(reader.next_record(&mut buf)) {
+                let k : u64 = format::load(&buf[0..8]);
+                let v : u64 = format::load(&buf[8..16]);
+                data.insert(k, v);
             }
         }
         
-        return Ok(MemTable{
-            logger: Box::new(try!(FileLogWriter::create(&filename, 16))),
-            data: Box::new(data),
-        });
+        return Ok(data);
     }
 }
 
@@ -59,14 +60,15 @@ mod test {
     fn single_recovery() {
         let filename = "/tmp/memtable";
         {
-            let mut memtable = MemTable::replay(filename).unwrap();
+            let mut memtable = MemTable::create(filename).unwrap();
             memtable.record(1234, 5678).unwrap();
             assert_eq!(5678, *memtable.lookup(1234).unwrap());
         }
 
         {
-            let memtable = MemTable::replay(filename).unwrap();
-            assert_eq!(5678, *memtable.lookup(1234).unwrap());
+            let map = MemTable::replay(filename)
+                .expect("MemTable::replay");
+            assert_eq!(Some(&5678), map.get(&1234));
         }
 
         fs::remove_file(&filename).unwrap();
