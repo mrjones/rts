@@ -1,10 +1,13 @@
+use filemanager;
 use format;
+use std::path;
 use std::io;
 
 use block_storage::Device;
 
 pub struct Db {
-    storage: Box<Device>
+    storage: Box<Device>,
+    filemanager: Box<filemanager::FileManager>,
 }
 
 fn record_offset(rec_index: u64) -> u64 {
@@ -16,8 +19,13 @@ fn record_offset(rec_index: u64) -> u64 {
 // Each record is 16 bytes: 8 bytes of timestamp, 8 bytes of value
 
 impl Db {
-    pub fn new(storage: Box<Device>) -> Db {
-        return Db{storage: storage}
+    pub fn new<P: AsRef<path::Path>>(storage: Box<Device>, directory: P) -> io::Result<Db> {
+        let mut filemanager = try!(filemanager::FileManager::open(directory));
+        
+        return Ok(Db{
+            storage: storage,
+            filemanager: Box::new(filemanager),
+        });
     }
 
     pub fn record(&mut self, rec: &format::Rec) -> io::Result<()> {
@@ -74,7 +82,8 @@ mod test {
 
     #[test]
     fn db_test() {
-        let mut db = Db::new(Box::new(InMemoryDevice::new(10240, 4)));
+        let mut db = Db::new(Box::new(InMemoryDevice::new(10240, 4)), "/tmp/db")
+            .expect("Db::new");
         db.record(&format::Rec{timestamp: 1234567890, value: 257}).unwrap();
         db.record(&format::Rec{timestamp: 1111111111, value: 1}).unwrap();
 
