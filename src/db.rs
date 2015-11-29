@@ -11,9 +11,11 @@ pub struct Db {
     memtable: Box<memtable::MemTable>,
 }
 
+// TODO(mrjones): concurrency
 impl Db {
     pub fn new<P: AsRef<path::Path>>(directory: P) -> io::Result<Db> {
-        let mut fm = Box::new(try!(filemanager::FileManager::open_or_create(directory)));
+        let mut fm = Box::new(try!(
+            filemanager::FileManager::open_or_create(directory)));
 
         match fm.latest_log() {
             Some(filename) => {
@@ -37,6 +39,8 @@ impl Db {
     }
 
     pub fn record(&mut self, rec: &format::Rec) -> io::Result<()> {
+        // TODO(mrjones): periodically compact the log
+        // TODO(mrjones): periodically merge tables
         return self.memtable.record(rec.timestamp, rec.value);
     }
 
@@ -46,6 +50,7 @@ impl Db {
             None => (),
         }
 
+        // TODO(mrjones): binary search the tables
         for filename in self.filemanager.table_paths() {
             for (k, v) in try!(table::TableIterator::new(filename)) {
                 if k == ts {
