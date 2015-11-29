@@ -81,7 +81,7 @@ impl FileManager {
         return path;
     }
     
-    pub fn log(&self) -> Option<String> {
+    pub fn latest_log(&self) -> Option<String> {
         return self.log_path.clone();
     }
 
@@ -106,10 +106,10 @@ mod test {
         {
             let mut fm = super::FileManager::open_or_create("/tmp/filemanager")
                 .expect("FileManager::open #1");
-            assert_eq!(None, fm.log());
+            assert_eq!(None, fm.latest_log());
             assert_eq!("/tmp/filemanager/log_0", fm.new_log_file());
             assert_eq!("/tmp/filemanager/log_1", fm.new_log_file());
-            assert_eq!("/tmp/filemanager/log_1", fm.log().unwrap());
+            assert_eq!("/tmp/filemanager/log_1", fm.latest_log().unwrap());
 
             File::create("/tmp/filemanager/log_0").unwrap();
             File::create("/tmp/filemanager/log_1").unwrap();
@@ -121,7 +121,7 @@ mod test {
             let mut fm = super::FileManager::open_or_create("/tmp/filemanager")
                 .expect("FileManager::open #2");
 
-            assert_eq!("/tmp/filemanager/log_1", fm.log().unwrap());
+            assert_eq!("/tmp/filemanager/log_1", fm.latest_log().unwrap());
             assert_eq!("/tmp/filemanager/log_2", fm.new_log_file());
             File::create("/tmp/filemanager/log_2").unwrap();
         }
@@ -131,7 +131,7 @@ mod test {
         {
             let fm = super::FileManager::open_or_create("/tmp/filemanager")
                 .expect("FileManager::open #3");
-            assert_eq!("/tmp/filemanager/log_2", fm.log().unwrap());
+            assert_eq!("/tmp/filemanager/log_2", fm.latest_log().unwrap());
         }
 
         fs::remove_dir_all("/tmp/filemanager").unwrap();
