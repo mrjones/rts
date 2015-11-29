@@ -7,7 +7,7 @@ use block_storage::Device;
 
 pub struct Db {
     storage: Box<Device>,
-    filemanager: Box<filemanager::FileManager>,
+    filemanager: filemanager::FileManager,
 }
 
 fn record_offset(rec_index: u64) -> u64 {
@@ -20,11 +20,9 @@ fn record_offset(rec_index: u64) -> u64 {
 
 impl Db {
     pub fn new<P: AsRef<path::Path>>(storage: Box<Device>, directory: P) -> io::Result<Db> {
-        let mut filemanager = try!(filemanager::FileManager::open(directory));
-        
         return Ok(Db{
             storage: storage,
-            filemanager: Box::new(filemanager),
+            filemanager: try!(filemanager::FileManager::open_or_create(directory)),
         });
     }
 
