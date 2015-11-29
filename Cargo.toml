@@ -5,3 +5,4 @@ authors = ["Matt Jones <jonesmr@gmail.com>"]
 
 [dependencies]
 time = "*"
+regex = "*"

@@ -1,3 +1,5 @@
+extern crate regex;
+
 use std::fs;
 use std::io;
 use std::path;
@@ -6,6 +8,15 @@ pub struct FileManager {
     root: path::PathBuf,
     log_path: Option<String>,
     log_version: usize,
+}
+
+fn log_file_version(filename: &str) -> Option<usize> {
+    let log_re = regex::Regex::new(r".*/log_([0-9]+)").unwrap();
+        
+    return log_re.captures(filename).and_then(
+        |caps| caps.at(1).and_then(
+            (|val| return val.parse::<usize>().ok())));
+
 }
 
 impl FileManager {
@@ -17,10 +28,12 @@ impl FileManager {
                 if err.kind() != io::ErrorKind::NotFound {
                     return Err(err);
                 } else {
+                    println!("Creating new FileManager dir");
                     try!(fs::create_dir(dir.as_ref()));
                 }
             },
             Ok(md) => {
+                println!("Recovering old FileManager dir");
                 if !md.is_dir() {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -28,18 +41,32 @@ impl FileManager {
                 }
             }
         }
+
+        let mut max_version : Option<usize> = None;
+        let mut max_path = None;
         
         for entry in try!(fs::read_dir(dir.as_ref())) {
             let entry = try!(entry);
-//            if !try!(fs::metadata(entry.path())).is_dir() {
-                println!("Entry: {:?}", entry.path());
-//            }
+            println!("Examining: {:?}", entry.path());
+            if !try!(fs::metadata(entry.path())).is_dir() {
+                match entry.path().to_str().and_then(log_file_version) {
+                    Some(v) => {
+                        println!("Extracted: {}", v);
+                        if max_version.is_none() || v > max_version.unwrap() {
+                            max_version = Some(v);
+                            max_path = entry.path().to_str()
+                                .and_then(|s| Some(s.to_string()));
+                        }
+                    }
+                    None => continue,
+                }
+            }
         }
         
         return Ok(FileManager{
             root: dir.as_ref().to_path_buf(),
-            log_version: 0,
-            log_path: None,
+            log_version: max_version.unwrap_or(0),
+            log_path: max_path,
         });
     }
 
@@ -62,14 +89,42 @@ impl FileManager {
 
 #[cfg(test)]
 mod test {
+    use std::fs;
+    use std::fs::File;
+    use std::io;
+
+    fn accept_not_found(err: io::Error) -> io::Result<()> {
+        if err.kind() == io::ErrorKind::NotFound {
+            return Ok(());
+        }
+        return Err(err);
+    }
+    
     #[test]
     fn basic() {
-        let mut fm = super::FileManager::open_or_create("/tmp/filemanager")
-            .expect("FileManager::open");
-        assert_eq!(None, fm.log());
-        assert_eq!("/tmp/filemanager/log_0", fm.new_log_file());
-        assert_eq!("/tmp/filemanager/log_1", fm.new_log_file());
-        assert_eq!("/tmp/filemanager/log_1", fm.log().unwrap());
+        fs::remove_dir_all("/tmp/filemanager").or_else(accept_not_found).unwrap();
+        {
+            let mut fm = super::FileManager::open_or_create("/tmp/filemanager")
+                .expect("FileManager::open #1");
+            assert_eq!(None, fm.log());
+            assert_eq!("/tmp/filemanager/log_0", fm.new_log_file());
+            assert_eq!("/tmp/filemanager/log_1", fm.new_log_file());
+            assert_eq!("/tmp/filemanager/log_1", fm.log().unwrap());
+
+            File::create("/tmp/filemanager/log_0").unwrap();
+            File::create("/tmp/filemanager/log_1").unwrap();
+        }
+
+        println!("Recovering...");
+        
+        {
+            let fm = super::FileManager::open_or_create("/tmp/filemanager")
+                .expect("FileManager::open #2");
+
+            assert_eq!("/tmp/filemanager/log_1", fm.log().expect("recover log"));
+        }
+
+        fs::remove_dir_all("/tmp/filemanager").unwrap();
     }
 }
 
