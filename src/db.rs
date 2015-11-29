@@ -1,6 +1,8 @@
 use filemanager;
 use format;
 use memtable;
+use table;
+
 use std::path;
 use std::io;
 
@@ -16,9 +18,12 @@ impl Db {
         match fm.latest_log() {
             Some(filename) => {
                 let data = try!(memtable::MemTable::replay(filename));
-                println!("Recovered: {:?}", data);
+                println!("Compacting recovered log: {:?}", data);
 
-                // TODO(mrjones): do something with recovered data
+                
+                try!(table::TableBuilder::write(
+                    fm.new_table_file(), data.iter()));
+                // Delete obsolete log?
             },
             None => (),
         }
@@ -38,10 +43,18 @@ impl Db {
     pub fn lookup(&mut self, ts: u64) -> io::Result<u64> {
         match self.memtable.lookup(ts) {
             Some(v) => return Ok(*v),
-            None => return Err(io::Error::new(io::ErrorKind::NotFound, "No Matching TS")),
+            None => (),
         }
 
-        // TODO(mrjones): check sorted tables
+        for filename in self.filemanager.table_paths() {
+            for (k, v) in try!(table::TableIterator::new(filename)) {
+                if k == ts {
+                    return Ok(v);
+                }
+            }
+        }
+
+        return Err(io::Error::new(io::ErrorKind::NotFound, "No Matching TS"));
     }
 }
 
@@ -50,12 +63,23 @@ mod test {
     extern crate time;
 
     use format;
-    use std::io::ErrorKind;
+    
+    use std::fs;
+    use std::io;
     
     use super::Db;
 
+    fn accept_not_found(err: io::Error) -> io::Result<()> {
+        if err.kind() == io::ErrorKind::NotFound {
+            return Ok(());
+        }
+        return Err(err);
+    }
+
     #[test]
     fn db_test() {
+        fs::remove_dir_all("/tmp/db").or_else(accept_not_found).unwrap();
+
         let mut db = Db::new("/tmp/db")
             .expect("Db::new");
         db.record(&format::Rec{timestamp: 1234567890, value: 257}).unwrap();
@@ -63,7 +87,32 @@ mod test {
 
         assert_eq!(257, db.lookup(1234567890).unwrap());
         assert_eq!(1,   db.lookup(1111111111).unwrap());
-        assert_eq!(ErrorKind::NotFound,
+        assert_eq!(io::ErrorKind::NotFound,
                    db.lookup(2222222222).unwrap_err().kind());
+    }
+
+    #[test]
+    fn recovery() {
+        fs::remove_dir_all("/tmp/db2").or_else(accept_not_found).unwrap();
+
+        {
+            let mut db = Db::new("/tmp/db2").expect("Db::new");
+            db.record(&format::Rec{timestamp: 1234567890, value: 257}).unwrap();
+            db.record(&format::Rec{timestamp: 1111111111, value: 1}).unwrap();
+
+            assert_eq!(257, db.lookup(1234567890).unwrap());
+            assert_eq!(1,   db.lookup(1111111111).unwrap());
+            assert_eq!(io::ErrorKind::NotFound,
+                       db.lookup(2222222222).unwrap_err().kind());
+        }
+
+        {
+            let mut db = Db::new("/tmp/db2").expect("Db::new");
+
+            assert_eq!(257, db.lookup(1234567890).unwrap());
+            assert_eq!(1,   db.lookup(1111111111).unwrap());
+            assert_eq!(io::ErrorKind::NotFound,
+                       db.lookup(2222222222).unwrap_err().kind());
+        }
     }
 }
