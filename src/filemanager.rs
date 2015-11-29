@@ -65,7 +65,7 @@ impl FileManager {
         
         return Ok(FileManager{
             root: dir.as_ref().to_path_buf(),
-            log_version: max_version.unwrap_or(0),
+            log_version: max_version.map(|v| v + 1).unwrap_or(0),
             log_path: max_path,
         });
     }
@@ -118,10 +118,20 @@ mod test {
         println!("Recovering...");
         
         {
-            let fm = super::FileManager::open_or_create("/tmp/filemanager")
+            let mut fm = super::FileManager::open_or_create("/tmp/filemanager")
                 .expect("FileManager::open #2");
 
-            assert_eq!("/tmp/filemanager/log_1", fm.log().expect("recover log"));
+            assert_eq!("/tmp/filemanager/log_1", fm.log().unwrap());
+            assert_eq!("/tmp/filemanager/log_2", fm.new_log_file());
+            File::create("/tmp/filemanager/log_2").unwrap();
+        }
+
+        println!("Recovering...");
+
+        {
+            let fm = super::FileManager::open_or_create("/tmp/filemanager")
+                .expect("FileManager::open #3");
+            assert_eq!("/tmp/filemanager/log_2", fm.log().unwrap());
         }
 
         fs::remove_dir_all("/tmp/filemanager").unwrap();
